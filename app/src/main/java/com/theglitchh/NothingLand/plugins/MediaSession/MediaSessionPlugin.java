@@ -27,6 +27,7 @@ import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Handler;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +37,7 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.theglitchh.NothingLand.utils.CallBack;
 import com.theglitchh.NothingLand.R;
@@ -558,15 +560,62 @@ public class MediaSessionPlugin extends BasePlugin {
 
     @Override
     public void onClick() {
-        if (expanded && !ctx.sharedPreferences.getBoolean("ms_enable_touch_expanded", false))
-            return;
-        if (mCurrent != null && mCurrent.getSessionActivity() != null) {
+        if (expanded && !openOnTouchWhenExpanded()) return;
+        openMusicApp();
+    }
+
+    /**
+     * The island runs in its own process, so its settings bundle is the source of
+     * truth (it is kept in sync by the SETTINGS_CHANGED broadcast). Stored
+     * preferences are only a fallback for the very first run.
+     */
+    private boolean openOnTouchWhenExpanded() {
+        if (ctx == null) return false;
+        if (ctx.sharedPreferences.containsKey("ms_enable_touch_expanded")) {
+            return ctx.sharedPreferences.getBoolean("ms_enable_touch_expanded", false);
+        }
+        return ctx.getSharedPreferences(ctx.getPackageName(), Context.MODE_PRIVATE)
+                .getBoolean("ms_enable_touch_expanded", false);
+    }
+
+    /**
+     * Opens the music app. Most players do not publish a session activity, so the
+     * old code silently did nothing for them; fall back to their launcher entry.
+     */
+    private void openMusicApp() {
+        if (ctx == null) return;
+        String pkg = mCurrent != null ? mCurrent.getPackageName() : current_package_name;
+        if (mCurrent != null) {
             try {
-                mCurrent.getSessionActivity().send(0);
-            } catch (PendingIntent.CanceledException e) {
-                e.printStackTrace();
+                PendingIntent session = mCurrent.getSessionActivity();
+                if (session != null) {
+                    session.send();
+                    afterOpen();
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w("MediaSessionPlugin", "Session activity could not be started", e);
             }
         }
+        if (pkg != null && !pkg.isEmpty()) {
+            try {
+                Intent launch = ctx.getPackageManager().getLaunchIntentForPackage(pkg);
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                    ctx.startActivity(launch);
+                    afterOpen();
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w("MediaSessionPlugin", "Could not launch " + pkg, e);
+            }
+        }
+        Toast.makeText(ctx, "Couldn't open the music app", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Tuck the island away so the app it just opened is not covered. */
+    private void afterOpen() {
+        if (expanded) onCollapse();
     }
 
     @Override
