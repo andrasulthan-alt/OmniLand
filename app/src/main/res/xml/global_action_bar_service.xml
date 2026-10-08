@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The island only draws an overlay and runs global actions. It doesn't read other
+     apps' screens, so it asks for as few accessibility events as possible (less work
+     on every tap and scroll, better battery). -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAllMask"
-    android:accessibilityFeedbackType="feedbackAllMask"
-    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
     android:canPerformGestures="true"
-    android:canRetrieveWindowContent="true"
+    android:canRetrieveWindowContent="false"
     android:description="@string/access_description"
     android:notificationTimeout="100" />
