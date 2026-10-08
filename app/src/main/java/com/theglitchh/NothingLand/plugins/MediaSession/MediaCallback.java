@@ -27,19 +27,44 @@ public class MediaCallback extends MediaController.Callback {
     private MediaMetadata mediaMetadata;
     private boolean isPlaying = true;
 
+    /** Stops listening to this player (the media plugin is being destroyed). */
+    public void release() {
+        try {
+            mCurrent.unregisterCallback(this);
+        } catch (Exception ignored) {
+        }
+    }
+
     private void updateView() {
         if (!isPlaying) return;
         if (mCurrent.getMetadata() == null) return;
+        if (mediaMetadata == null) mediaMetadata = mCurrent.getMetadata();
+        // Many players have no album art, or publish it under another key.
         Bitmap b = mediaMetadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-        if (b == null) {
-            return;
-        }
-        String title = mediaMetadata.getText(MediaMetadata.METADATA_KEY_TITLE).toString();
+        if (b == null) b = mediaMetadata.getBitmap(MediaMetadata.METADATA_KEY_ART);
+        if (b == null) b = mediaMetadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+        CharSequence titleText = mediaMetadata.getText(MediaMetadata.METADATA_KEY_TITLE);
+        String title = titleText == null ? "" : titleText.toString();
         String artist = mediaMetadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
+        if (artist == null) artist = "";
+        ctx.mCurrent = mCurrent;
         ctx.queueUpdate(new UpdateQueueStruct(artist, title, b));
         ctx.openOverlay(mCurrent.getPackageName());
-        ctx.mCurrent = mCurrent;
         ctx.onPlayerResume(false);
+    }
+
+    @Override
+    public void onMetadataChanged(@Nullable MediaMetadata metadata) {
+        super.onMetadataChanged(metadata);
+        // Next track without a play/pause change: refresh title and cover.
+        try {
+            if (metadata == null || !isPlaying) return;
+            if (ctx.mCurrent != null && !ctx.mCurrent.getPackageName().equals(mCurrent.getPackageName())) return;
+            mediaMetadata = metadata;
+            updateView();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -91,7 +116,9 @@ public class MediaCallback extends MediaController.Callback {
         if (mCurrent != null) {
             mCurrent.unregisterCallback(this);
             ctx.callbackMap.remove(mCurrent.getPackageName());
-            ctx.mCurrent = null;
+            if (ctx.mCurrent != null && ctx.mCurrent.getPackageName().equals(mCurrent.getPackageName())) {
+                ctx.mCurrent = null;
+            }
         }
         ctx.closeOverlay();
 

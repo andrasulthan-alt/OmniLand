@@ -39,6 +39,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.theglitchh.NothingLand.utils.Broadcasts;
 import com.theglitchh.NothingLand.utils.CallBack;
 import com.theglitchh.NothingLand.R;
 import com.theglitchh.NothingLand.plugins.BasePlugin;
@@ -88,25 +89,29 @@ public class MediaSessionPlugin extends BasePlugin {
     private final Runnable r = new Runnable() {
         @Override
         public void run() {
-            if (!expanded) return;
+            if (!expanded || mView == null) return;
             if (mCurrent == null) {
                 closeOverlay();
                 return;
             }
-            long elapsed = mCurrent.getPlaybackState().getPosition();
-            if (elapsed < 0) {
+            PlaybackState state = mCurrent.getPlaybackState();
+            MediaMetadata metadata = mCurrent.getMetadata();
+            if (state == null || metadata == null || state.getPosition() < 0) {
                 closeOverlay();
                 return;
             }
-            if (mCurrent.getMetadata() == null) {
-                closeOverlay();
-                return;
-            }
-            long total = mCurrent.getMetadata().getLong(MediaMetadata.METADATA_KEY_DURATION);
+            long elapsed = state.getPosition();
+            long total = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
             elapsedView.setText(DurationFormatUtils.formatDuration(elapsed, "mm:ss", true));
-            remainingView.setText("-" + DurationFormatUtils.formatDuration(Math.abs(total - elapsed), "mm:ss", true));
-            if (!seekbar_dragging) seekBar.setProgress((int) ((((float) elapsed / total) * 100)));
-            mHandler.post(r);
+            if (total > 0) {
+                remainingView.setText("-" + DurationFormatUtils.formatDuration(Math.abs(total - elapsed), "mm:ss", true));
+                if (!seekbar_dragging) seekBar.setProgress((int) ((((float) elapsed / total) * 100)));
+            } else {
+                remainingView.setText("");
+            }
+            // Twice a second is plenty for a mm:ss clock; posting with no delay kept
+            // the main thread busy the whole time the player was open.
+            mHandler.postDelayed(r, 500);
         }
     };
 
@@ -118,12 +123,21 @@ public class MediaSessionPlugin extends BasePlugin {
     }
 
     public void closeOverlay() {
+        if (mView == null) {
+            overlayOpen = false;
+            return;
+        }
         animateChild(0, new CallBack());
         overlayOpen = false;
         shouldRemoveOverlay();
     }
 
     public void closeOverlay(CallBack callBack) {
+        if (mView == null) {
+            overlayOpen = false;
+            callBack.onFinish();
+            return;
+        }
         animateChild(0, callBack);
         overlayOpen = false;
     }
@@ -149,12 +163,12 @@ public class MediaSessionPlugin extends BasePlugin {
 
     @SuppressLint("UseCompatLoadingForDrawables")
     public void onPlayerResume(boolean b) {
-        if (expanded && b) {
+        if (expanded && b && pause_play != null) {
             pause_play.setImageDrawable(ctx.getDrawable(R.drawable.avd_play_to_pause));
             pause_play.setImageTintList(ColorStateList.valueOf(ctx.textColor));
             ((AnimatedVectorDrawable) pause_play.getDrawable()).start();
         }
-        if (mCurrent == null) return;
+        if (mCurrent == null || mediaSessionManager == null || visualizer == null) return;
         int index = -1;
         List<MediaController> controllerList = mediaSessionManager.getActiveSessions(new ComponentName(ctx.getBaseContext(), NotiService.class));
         for (int v = 0; v < controllerList.size(); v++) {
@@ -166,18 +180,6 @@ public class MediaSessionPlugin extends BasePlugin {
         }
         if (index == -1) return;
         visualizer.setPlayerId(index);
-        if (mCurrent.getMetadata() == null) return;
-        Bitmap bm = mCurrent.getMetadata().getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-        if (bm == null) return;
-        //int dc = getDominantColor(bm, ctx);
-        //if (isColorDark(dc)) {
-            //dc = lightenColor(dc);
-        //}
-
-        SharedPreferences prefs = ctx.getSharedPreferences(ctx.getPackageName(), Context.MODE_PRIVATE);
-        IntentFilter filter = new IntentFilter(ctx.getPackageName() + ".COLOR_CHANGED");
-        ctx.registerReceiver(receiver, filter);
-       // visualizer.setColor( prefs.getInt("Allaccent_color", Color.RED));
     }
 
     private int lightenColor(int colorin) {
@@ -197,16 +199,20 @@ public class MediaSessionPlugin extends BasePlugin {
 
     @SuppressLint("UseCompatLoadingForDrawables")
     public void onPlayerPaused(boolean b) {
-        if (expanded && b) {
+        if (expanded && b && pause_play != null) {
             pause_play.setImageDrawable(ctx.getDrawable(R.drawable.avd_pause_to_play));
             pause_play.setImageTintList(ColorStateList.valueOf(ctx.textColor));
             ((AnimatedVectorDrawable) pause_play.getDrawable()).start();
         }
         last_played = Instant.now();
         mHandler.postDelayed(() -> {
+            if (mediaSessionManager == null || last_played == null) return;
             if (Math.abs(Instant.now().toEpochMilli() - last_played.toEpochMilli()) >= 60 * 1000) {
-                if (getActiveCurrent(mediaSessionManager.getActiveSessions(new ComponentName(ctx, NotiService.class))) == null)
-                    closeOverlay();
+                try {
+                    if (getActiveCurrent(mediaSessionManager.getActiveSessions(new ComponentName(ctx, NotiService.class))) == null)
+                        closeOverlay();
+                } catch (Exception ignored) {
+                }
             }
         }, 60 * 1000);
     }
@@ -244,27 +250,38 @@ public class MediaSessionPlugin extends BasePlugin {
         mView.findViewById(R.id.blank_space).setVisibility(View.VISIBLE);
         init();
 
+        // The visualizer follows the accent colour; register once here (it used to be
+        // registered again on every track, and never removed).
+        Broadcasts.register(ctx, receiver, new IntentFilter(ctx.getPackageName() + ".COLOR_CHANGED"));
+
         mediaSessionManager = (MediaSessionManager) ctx.getSystemService(Context.MEDIA_SESSION_SERVICE);
-        mediaSessionManager.addOnActiveSessionsChangedListener(listnerForActiveSessions, new
-
-                ComponentName(ctx, NotiService.class));
-        mediaSessionManager.getActiveSessions(new
-
-                        ComponentName(ctx, NotiService.class)).
-
-                forEach(x ->
-
-                {
-                    if (callbackMap.get(x.getPackageName()) != null) return;
-                    MediaCallback c = new MediaCallback(x, this);
-                    callbackMap.put(x.getPackageName(), c);
-                    x.registerCallback(c);
-                });
+        try {
+            ComponentName listener = new ComponentName(ctx, NotiService.class);
+            mediaSessionManager.addOnActiveSessionsChangedListener(listnerForActiveSessions, listener);
+            mediaSessionManager.getActiveSessions(listener).forEach(x -> {
+                if (callbackMap.get(x.getPackageName()) != null) return;
+                MediaCallback c = new MediaCallback(x, this);
+                callbackMap.put(x.getPackageName(), c);
+                x.registerCallback(c);
+            });
+        } catch (SecurityException e) {
+            // Notification access isn't granted (yet). The island rebuilds itself when
+            // NotiService connects, and this runs again then.
+            Log.w("MediaSessionPlugin", "No notification access yet", e);
+        }
     }
 
 
     public void shouldRemoveOverlay() {
-        if (getActiveCurrent(mediaSessionManager.getActiveSessions(new ComponentName(ctx, NotiService.class))) == null) {
+        if (mediaSessionManager == null) {
+            ctx.dequeue(this);
+            return;
+        }
+        try {
+            if (getActiveCurrent(mediaSessionManager.getActiveSessions(new ComponentName(ctx, NotiService.class))) == null) {
+                ctx.dequeue(this);
+            }
+        } catch (Exception e) {
             ctx.dequeue(this);
         }
     }
@@ -305,7 +322,8 @@ public class MediaSessionPlugin extends BasePlugin {
 
         pause_play.setOnClickListener(l -> {
             if (mCurrent == null) return;
-            if (mCurrent.getPlaybackState().getState() == PlaybackState.STATE_PAUSED) {
+            PlaybackState state = mCurrent.getPlaybackState();
+            if (state == null || state.getState() != PlaybackState.STATE_PLAYING) {
                 mCurrent.getTransportControls().play();
 
             } else {
@@ -345,7 +363,10 @@ public class MediaSessionPlugin extends BasePlugin {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 seekbar_dragging = false;
-                mCurrent.getTransportControls().seekTo((long) ((float) seekBar.getProgress() / 100 * mCurrent.getMetadata().getLong(MediaMetadata.METADATA_KEY_DURATION)));
+                if (mCurrent == null || mCurrent.getMetadata() == null) return;
+                long total = mCurrent.getMetadata().getLong(MediaMetadata.METADATA_KEY_DURATION);
+                if (total <= 0) return;
+                mCurrent.getTransportControls().seekTo((long) ((float) seekBar.getProgress() / 100 * total));
             }
         });
         visualizer = mView.findViewById(R.id.visualizer);
@@ -363,6 +384,26 @@ public class MediaSessionPlugin extends BasePlugin {
         mHandler.removeCallbacks(r);
         bound = false;
         ctx.clearIslandColorOverride();
+        if (expanded && mView != null) {
+            // Something else took the island while the player was open: put the
+            // player back in its small state so it works again when it returns.
+            expanded = false;
+            try {
+                OverLayCallBackStart.onFinish();
+                overLayCallBackEnd.onFinish();
+                int size = ctx.dpToInt(ctx.minHeight / 4);
+                for (View v : new View[]{cover, visualizer}) {
+                    ViewGroup.LayoutParams lp = v.getLayoutParams();
+                    lp.width = size;
+                    lp.height = size;
+                    v.setLayoutParams(lp);
+                }
+                visualizer.setVisibility(View.VISIBLE);
+                visualizer.paused = false;
+            } catch (Exception e) {
+                Log.w("MediaSessionPlugin", "Could not reset the player view", e);
+            }
+        }
     }
 
     // ------------------------------------------------------------ album colour
@@ -433,17 +474,31 @@ public class MediaSessionPlugin extends BasePlugin {
 
     @Override
     public void onDestroy() {
-        if (visualizer != null) visualizer.release();
+        if (mHandler != null) mHandler.removeCallbacksAndMessages(null);
+        if (visualizer != null) {
+            visualizer.release();
+            visualizer.unregister();
+        }
+        Broadcasts.unregister(ctx, receiver);
         if (mediaSessionManager != null)
             mediaSessionManager.removeOnActiveSessionsChangedListener(listnerForActiveSessions);
+        // Stop listening to the players, otherwise a destroyed plugin keeps reacting
+        // to play/pause, and after a rebuild the music never shows up again.
+        for (MediaController.Callback c : callbackMap.values()) {
+            if (c instanceof MediaCallback) ((MediaCallback) c).release();
+        }
+        callbackMap.clear();
         mediaSessionManager = null;
         mCurrent = null;
         mView = null;
-
+        expanded = false;
+        overlayOpen = false;
+        bound = false;
     }
 
     @Override
     public void onTextColorChange() {
+        if (mView == null) return;
         TextView titleView = mView.findViewById(R.id.title);
         TextView artistView = mView.findViewById(R.id.artist_subtitle);
         elapsedView.setTextColor(ctx.textColor);
@@ -460,6 +515,7 @@ public class MediaSessionPlugin extends BasePlugin {
     private final CallBack onChange = new CallBack() {
         @Override
         public void onChange(float p) {
+            if (mView == null) return;
             float f;
             if (expanded) {
                 f = p;
@@ -487,6 +543,7 @@ public class MediaSessionPlugin extends BasePlugin {
         @Override
         public void onFinish() {
             super.onFinish();
+            if (mView == null) return;
             if (expanded) {
                 mView.findViewById(R.id.blank_space).setVisibility(View.GONE);
                 ViewGroup.LayoutParams layoutParams = mView.getLayoutParams();
@@ -521,6 +578,7 @@ public class MediaSessionPlugin extends BasePlugin {
         @Override
         public void onFinish() {
             super.onFinish();
+            if (mView == null) return;
             if (expanded) {
                 mView.setPadding(0, ctx.statusBarHeight, 0, 0);
                 ((RelativeLayout.LayoutParams) coverHolder.getLayoutParams()).leftMargin = ctx.dpToInt(20);
@@ -650,13 +708,24 @@ public class MediaSessionPlugin extends BasePlugin {
 
 
     public void queueUpdate(UpdateQueueStruct queueStruct) {
+        if (mView == null) return; // plugin was switched off
         ctx.enqueue(this);
         TextView titleView = mView.findViewById(R.id.title);
         TextView artistView = mView.findViewById(R.id.artist_subtitle);
         ShapeableImageView imageView = cover;
         titleView.setText(queueStruct.getTitle());
         artistView.setText(queueStruct.getArtist());
-        imageView.setImageBitmap(queueStruct.getCover());
+        if (queueStruct.getCover() != null) {
+            imageView.setImageBitmap(queueStruct.getCover());
+        } else {
+            // Players without album art: show the app's icon instead of nothing.
+            Drawable appIcon = null;
+            try {
+                if (mCurrent != null) appIcon = ctx.getPackageManager().getApplicationIcon(mCurrent.getPackageName());
+            } catch (Exception ignored) {
+            }
+            imageView.setImageDrawable(appIcon);
+        }
         if (queueStruct.getCover() != lastCover) {
             lastCover = queueStruct.getCover();
             albumColor = lastCover != null ? islandColorFrom(lastCover) : null;
@@ -669,6 +738,7 @@ public class MediaSessionPlugin extends BasePlugin {
 
 
     private void animateChild(boolean expanding, int h) {
+        if (mView == null) return;
         View view1 = cover;
         View view2 = visualizer;
 

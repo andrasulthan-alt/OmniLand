@@ -1,6 +1,5 @@
 package com.theglitchh.NothingLand.plugins.MediaSession;
 
-import static androidx.core.content.ContextCompat.registerReceiver;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -74,6 +73,11 @@ public class SongVisualizer extends View {
         }
     }
 
+    /** Stops listening for colour changes (called when the media plugin is destroyed). */
+    public void unregister() {
+        com.theglitchh.NothingLand.utils.Broadcasts.unregister(ctx, receiver);
+    }
+
     public void release() {
         //will be null if setPlayer hasn't yet been called
         if (visualizer == null)
@@ -85,7 +89,7 @@ public class SongVisualizer extends View {
     }
     private void init() {
         IntentFilter filter = new IntentFilter(ctx.getPackageName() + ".COLOR_CHANGED");
-        ctx.registerReceiver(receiver, filter);
+        com.theglitchh.NothingLand.utils.Broadcasts.register(ctx, receiver, filter);
 
         if (paint.getColor() != currentColor) {
             setColor(currentColor);
