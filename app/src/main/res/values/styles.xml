@@ -18,4 +18,41 @@
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
     </style>
-</resources>
+
+    <!-- Nothing-style dialogs (action picker, app picker, update): near-black card,
+         white text, the one red for the main button, dot-matrix font. -->
+    <style name="ThemeOverlay.OmniLand.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/OmniLand.Dialog</item>
+        <item name="colorSurface">@color/omni_dialog_bg</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="colorPrimary">@color/omni_red</item>
+        <item name="colorOnSurface">@color/white</item>
+        <item name="colorOnSurfaceVariant">@color/omni_grey</item>
+        <item name="android:fontFamily">@font/nf</item>
+        <item name="buttonBarPositiveButtonStyle">@style/OmniLand.Dialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/OmniLand.Dialog.ButtonMuted</item>
+        <item name="buttonBarNeutralButtonStyle">@style/OmniLand.Dialog.ButtonMuted</item>
+    </style>
+
+    <style name="OmniLand.Dialog" parent="MaterialAlertDialog.Material3">
+        <item name="backgroundTint">@color/omni_dialog_bg</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.OmniLand.Dialog</item>
+    </style>
+
+    <style name="ShapeAppearance.OmniLand.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <style name="OmniLand.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/omni_red</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+
+    <style name="OmniLand.Dialog.ButtonMuted" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+</resources>

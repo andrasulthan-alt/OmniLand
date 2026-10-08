@@ -70,4 +70,10 @@
     <color name="md_theme_dark_primaryContainer">#c1161d</color>
     <color name="md_theme_dark_primary">#d71921</color>
     <color name="transparent_black">#80000000</color>
-</resources>
+    <!-- Nothing palette -->
+    <color name="omni_red">#D71921</color>
+    <color name="omni_grey">#99FFFFFF</color>
+    <color name="omni_dialog_bg">#141414</color>
+    <color name="omni_card_bg">#141414</color>
+    <color name="omni_card_stroke">#262626</color>
+</resources>
