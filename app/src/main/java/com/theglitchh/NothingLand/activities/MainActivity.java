@@ -237,7 +237,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
         if (sharedPreferences.getBoolean("update_enabled", true) && BuildConfig.AUTO_UPDATE)
             startService(new Intent(this, UpdaterService.class));
         if (BuildConfig.AUTO_UPDATE)
-            registerReceiver(broadcastReceiver, new IntentFilter(getPackageName() + ".UPDATE_AVAIL"));
+            com.theglitchh.NothingLand.utils.Broadcasts.register(this, broadcastReceiver, new IntentFilter(getPackageName() + ".UPDATE_AVAIL"));
 
     }
 
@@ -344,7 +344,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
             }
         });
         intent.putExtra("settings", b);
-        sendBroadcast(intent);
+        com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
     }
 
     private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {

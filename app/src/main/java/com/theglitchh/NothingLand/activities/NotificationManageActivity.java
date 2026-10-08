@@ -33,7 +33,7 @@ public class NotificationManageActivity extends AppCompatActivity implements Sha
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String s) {
         Intent intent = new Intent(getPackageName() + ".NOTIFICATION_APPS_UPDATE");
         intent.putExtra("apps", sharedPreferences.getString("notifications_apps", ""));
-        sendBroadcast(intent);
+        com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
     }
 
     @SuppressLint("RestrictedApi")
@@ -87,7 +87,7 @@ public class NotificationManageActivity extends AppCompatActivity implements Sha
             finish();
             return true;
         } else {
-            if (adapter.apps != null) {
+            if (adapter != null && adapter.apps != null) {
                 if (adapter.apps.stream().anyMatch(x -> x.enabled)) {
                     for (NotificationAppMeta app : adapter.apps) {
                         app.enabled = false;

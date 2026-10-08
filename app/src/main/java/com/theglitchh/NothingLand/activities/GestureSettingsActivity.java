@@ -1,22 +1,28 @@
 package com.theglitchh.NothingLand.activities;
 
 import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ListView;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.theglitchh.NothingLand.R;
 import com.theglitchh.NothingLand.utils.QuickActions;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -25,6 +31,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -43,8 +50,8 @@ public class GestureSettingsActivity extends AppCompatActivity {
     public static final String PREF_FAVORITES = "favorite_apps";
 
     private SharedPreferences prefs;
-    private ArrayAdapter<String> adapter;
-    private final List<String> rows = new ArrayList<>();
+    /** Value text of each row (gestures first, then favorite apps), refreshed after a change. */
+    private final List<TextView> values = new ArrayList<>();
 
     public static String actionFor(SharedPreferences prefs, String key) {
         for (int i = 0; i < KEYS.length; i++) {
@@ -60,49 +67,103 @@ public class GestureSettingsActivity extends AppCompatActivity {
         if (getSupportActionBar() != null) getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         prefs = getSharedPreferences(getPackageName(), MODE_PRIVATE);
 
-        ListView list = new ListView(this);
-        int pad = dp(8);
-        list.setPadding(pad, pad, pad, pad);
-        adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_2, android.R.id.text1, rows) {
-            @NonNull
-            @Override
-            public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-                View v = super.getView(position, convertView, parent);
-                TextView t1 = v.findViewById(android.R.id.text1);
-                TextView t2 = v.findViewById(android.R.id.text2);
-                if (position < KEYS.length) {
-                    t1.setText(NAMES[position]);
-                    t2.setText(QuickActions.label(GestureSettingsActivity.this, actionFor(prefs, KEYS[position])));
-                } else {
-                    t1.setText("Favorite apps");
-                    t2.setText(favoritesSummary());
-                }
-                return v;
-            }
-        };
-        for (String n : NAMES) rows.add(n);
-        rows.add("Favorite apps");
-        list.setAdapter(adapter);
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            if (position < KEYS.length) pickAction(position);
-            else pickFavorites();
-        });
+        // Nothing-style page: big dot-matrix title, small red section captions and
+        // rounded near-black rows with the chosen action on the right.
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(32));
 
-        // The app theme has no action bar, so draw a simple header ourselves.
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        ImageView back = new ImageView(this);
+        back.setImageResource(R.drawable.ic_baseline_arrow_back_ios_24);
+        back.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        back.setPadding(dp(4), dp(16), dp(16), dp(8));
+        back.setContentDescription("Back");
+        back.setOnClickListener(v -> finish());
+        content.addView(back, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         TextView title = new TextView(this);
-        title.setText("Gestures and quick cards");
-        title.setTextSize(24);
-        title.setPadding(dp(20), dp(28), dp(20), dp(8));
+        title.setText("Gestures and\nquick cards");
+        title.setTextSize(32);
+        title.setTextColor(Color.WHITE);
+        title.setPadding(dp(4), dp(8), dp(4), dp(8));
+        content.addView(title);
+
         TextView hint = new TextView(this);
         hint.setText("What the island does when nothing is playing or active. Tap a gesture to choose its action.");
         hint.setTextSize(13);
-        hint.setPadding(dp(20), 0, dp(20), dp(8));
-        root.addView(title);
-        root.addView(hint);
-        root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(root);
+        hint.setTextColor(getColor(R.color.omni_grey));
+        hint.setPadding(dp(4), 0, dp(4), dp(8));
+        content.addView(hint);
+
+        content.addView(section("Gestures"));
+        for (int i = 0; i < KEYS.length; i++) {
+            final int gesture = i;
+            content.addView(row(NAMES[i], v -> pickAction(gesture)));
+        }
+        content.addView(section("Quick cards"));
+        content.addView(row("Favorite apps", v -> pickFavorites()));
+        refreshRows();
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.BLACK);
+        scroll.addView(content);
+        setContentView(scroll);
+    }
+
+    private TextView section(String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text.toUpperCase(Locale.ROOT));
+        tv.setTextSize(11);
+        tv.setLetterSpacing(0.12f);
+        tv.setTextColor(getColor(R.color.omni_red));
+        tv.setPadding(dp(8), dp(24), dp(8), dp(8));
+        return tv;
+    }
+
+    private View row(String name, View.OnClickListener onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(18), dp(16), dp(18), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(getColor(R.color.omni_card_bg));
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), getColor(R.color.omni_card_stroke));
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), bg, null));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(onClick);
+
+        TextView label = new TextView(this);
+        label.setText(name);
+        label.setTextSize(16);
+        label.setTextColor(Color.WHITE);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView value = new TextView(this);
+        value.setTextSize(13);
+        value.setTextColor(getColor(R.color.omni_grey));
+        value.setGravity(Gravity.END);
+        value.setMaxWidth(dp(170));
+        value.setPadding(dp(12), 0, 0, 0);
+        row.addView(value, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        values.add(value);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, dp(8));
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    /** Shows the current action for each gesture and the favorites summary. */
+    private void refreshRows() {
+        for (int i = 0; i < values.size(); i++) {
+            String text = i < KEYS.length
+                    ? QuickActions.label(this, actionFor(prefs, KEYS[i]))
+                    : favoritesSummary();
+            values.get(i).setText(text);
+        }
     }
 
     private int dp(int v) {
@@ -111,9 +172,9 @@ public class GestureSettingsActivity extends AppCompatActivity {
 
     private String favoritesSummary() {
         String csv = prefs.getString(PREF_FAVORITES, "");
-        if (csv == null || csv.trim().isEmpty()) return "None chosen (shown in the favorite apps card)";
+        if (csv == null || csv.trim().isEmpty()) return "None";
         int n = csv.split(",").length;
-        return n + (n == 1 ? " app" : " apps") + " in the favorite apps card";
+        return n + (n == 1 ? " app" : " apps");
     }
 
     private void pickAction(int gesture) {
@@ -202,7 +263,7 @@ public class GestureSettingsActivity extends AppCompatActivity {
 
     private void save(String key, String value) {
         prefs.edit().putString(key, value).apply();
-        adapter.notifyDataSetChanged();
+        refreshRows();
         // Tell the island service so the change applies right away.
         Intent intent = new Intent(getPackageName() + ".SETTINGS_CHANGED");
         Bundle b = new Bundle();
@@ -212,7 +273,7 @@ public class GestureSettingsActivity extends AppCompatActivity {
             else if (v instanceof String) b.putString(e.getKey(), (String) v);
         }
         intent.putExtra("settings", b);
-        sendBroadcast(intent);
+        com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
     }
 
     @Override

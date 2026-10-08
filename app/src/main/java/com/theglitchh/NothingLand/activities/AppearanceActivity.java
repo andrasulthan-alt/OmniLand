@@ -91,7 +91,7 @@ public class AppearanceActivity extends AppCompatActivity {
             intent.putExtra("Allaccent_color", sharedPreferences.getInt("Allaccent_color", getColor(R.color.md_theme_dark_inversePrimary)));
             intent.putExtra("background_image_uri", (String) null);  // Indicate that the image was cleared
 
-            sendBroadcast(intent);
+            com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
 
             // Optionally, you can show a Snackbar for feedback
             Snackbar.make(findViewById(R.id.resetbtn2), "Background image reset", Snackbar.LENGTH_SHORT).show();
@@ -138,7 +138,7 @@ public class AppearanceActivity extends AppCompatActivity {
                             intent.putExtra("background_image_uri", selectedImageUri.toString());
 
                         }
-                        sendBroadcast(intent);
+                        com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
                     } catch (Exception e) {
                         t.setErrorEnabled(true);
                         t.setError("Invalid hexadecimal value");
@@ -204,7 +204,7 @@ public class AppearanceActivity extends AppCompatActivity {
             intent.putExtra("color", sharedPreferences.getInt("color", Color.BLACK));
             intent.putExtra("Allaccent_color", sharedPreferences.getInt("Allaccent_color", getColor(R.color.md_theme_dark_inversePrimary)));
 
-            sendBroadcast(intent);
+            com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
 
 
         }

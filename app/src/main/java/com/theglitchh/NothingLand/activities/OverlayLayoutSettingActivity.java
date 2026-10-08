@@ -229,7 +229,7 @@ public class OverlayLayoutSettingActivity extends AppCompatActivity {
             }
         });
         intent.putExtra("settings", b);
-        sendBroadcast(intent);
+        com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
     }
 
     private float pxToDp(int x) {
