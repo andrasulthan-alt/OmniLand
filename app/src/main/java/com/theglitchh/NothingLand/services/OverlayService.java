@@ -61,6 +61,7 @@ import androidx.core.content.ContextCompat;
 
 import com.theglitchh.NothingLand.plugins.BasePlugin;
 import com.theglitchh.NothingLand.plugins.ExportedPlugins;
+import com.theglitchh.NothingLand.utils.Broadcasts;
 import com.theglitchh.NothingLand.utils.CallBack;
 import com.theglitchh.NothingLand.utils.CutoutPosition;
 import com.theglitchh.NothingLand.utils.QuickActions;
@@ -95,7 +96,7 @@ public class OverlayService extends AccessibilityService {
                 }
             } else if (intent.getAction().equals(Intent.ACTION_SCREEN_OFF)) {
                 if (sharedPreferences.getBoolean("enable_on_lockscreen", false)) return;
-                mView.setVisibility(View.INVISIBLE);
+                if (mView != null) mView.setVisibility(View.INVISIBLE);
                 hideBubble();
             } else if (intent.getAction().equals(getPackageName() + ".OVERLAY_LAYOUT_CHANGE")) {
                 Bundle settings = Objects.requireNonNull(intent.getExtras()).getBundle("settings");
@@ -128,45 +129,28 @@ public class OverlayService extends AccessibilityService {
                 }
             } else if (Objects.equals(intent.getAction(), getPackageName() + ".COLOR_CHANGED")) {
                 String uriString = intent.getStringExtra("background_image_uri");
-                View mainView = mView != null ? mView.findViewById(R.id.main) : null;
-                if (uriString != null && mView != null) {
-                    try {
-                        mView.findViewById(R.id.main).setBackgroundTintList(null);
-                        Uri imageUri = Uri.parse(uriString);
-                        Drawable background = Drawable.createFromStream(
-                                getContentResolver().openInputStream(imageUri), uriString);
-
-                        if (mainView != null) {
-                            mainView.setBackground(background);
-                            applyBlurToMainView();
-                            imageBackground = true;
-                        }
-                    } catch (Exception e) {
-                        Log.e("IMAGE_CHANGED", "Failed to load image URI", e);
-                    }
-                }else {
-                    imageBackground = false;
-                    int targetColor = 0x80000000;
-                    color = Objects.requireNonNull(intent.getExtras()).getInt("color", Color.RED);
-
-                    if (color == targetColor) {
-                        textColor = isColorDark(color) ? getColor(R.color.white) : getColor(R.color.black);
-                        mView.findViewById(R.id.main).setBackgroundTintList(ColorStateList.valueOf(color));
-
-
-                    }  else {
-                        textColor = isColorDark(color) ? getColor(R.color.white) : getColor(R.color.black);
-                        if (mView != null) {
-                            mView.findViewById(R.id.main).setBackgroundTintList(ColorStateList.valueOf(color));
-                            if (binded_plugin != null) {
-                                binded_plugin.onTextColorChange();
-                            }
-                        }
-
-                    }
-                    if (colorOverride != null) applyIslandColor();
+                if (intent.hasExtra("color")) {
+                    color = intent.getIntExtra("color", color);
+                    // Keep the settings bundle in step, otherwise the colour reverts on the next rebuild.
+                    sharedPreferences.putInt("color", color);
                 }
-
+                if (uriString != null) {
+                    sharedPreferences.putString("background_image_uri", uriString);
+                    if (mView != null && applyBackgroundImage(uriString)) return;
+                } else if (imageBackground) {
+                    // The background image was removed: rebuild to get the plain island back.
+                    sharedPreferences.remove("background_image_uri");
+                    rebuildOverlay();
+                    return;
+                }
+                sharedPreferences.remove("background_image_uri");
+                imageBackground = false;
+                textColor = isColorDark(color) ? getColor(R.color.white) : getColor(R.color.black);
+                if (mView != null) {
+                    mView.findViewById(R.id.main).setBackgroundTintList(ColorStateList.valueOf(color));
+                    if (binded_plugin != null) binded_plugin.onTextColorChange();
+                }
+                if (colorOverride != null) applyIslandColor();
             } else {
                 if (intent.getExtras() != null && intent.getExtras().getBundle("settings") != null) {
                     Bundle settings = intent.getExtras().getBundle("settings");
@@ -178,19 +162,12 @@ public class OverlayService extends AccessibilityService {
                         }
                     }
                 }
-                // SETTINGS_CHANGED or WALLPAPER_CHANGED: rebuild the island with the new settings/colors.
-                plugins.forEach(p -> {
-                    try {
-                        p.onDestroy();
-                    } catch (Throwable ignored) {
-                    }
-                });
-                queued.clear();
-                removeBubble();
-                if (mView != null && mWindowManager != null) {
-                    mWindowManager.removeViewImmediate(mView);
-                }
-                init();
+                // A new wallpaper only matters when the island takes its colour from it.
+                if (Intent.ACTION_WALLPAPER_CHANGED.equals(intent.getAction())
+                        && !sharedPreferences.getBoolean("wallpaper_color", false)) return;
+                // SETTINGS_CHANGED, LISTENER_CONNECTED or WALLPAPER_CHANGED: rebuild the island
+                // with the new settings/colours. init() asks NotiService to resend what's live.
+                rebuildOverlay();
             }
         }
     };
@@ -298,7 +275,8 @@ public class OverlayService extends AccessibilityService {
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(getPackageName() + ".COLOR_CHANGED");
         filter.addAction(Intent.ACTION_WALLPAPER_CHANGED);
-        registerReceiver(broadcastReceiver, filter);
+        filter.addAction(getPackageName() + Broadcasts.LISTENER_CONNECTED);
+        Broadcasts.register(this, broadcastReceiver, filter);
 
         SharedPreferences sharedPreferences2 = getSharedPreferences(getPackageName(), MODE_PRIVATE);
         sharedPreferences2.getAll().forEach((key, value) -> {
@@ -479,6 +457,9 @@ public class OverlayService extends AccessibilityService {
             Log.d("Error1", e.toString());
         }
         applyBlurToMainView();
+        imageBackground = false;
+        String backgroundUri = sharedPreferences.getString("background_image_uri", null);
+        if (backgroundUri != null) applyBackgroundImage(backgroundUri);
 
         mView.setOnTouchListener((view, event) -> {
             int action = event.getActionMasked();
@@ -561,10 +542,42 @@ public class OverlayService extends AccessibilityService {
             return false;
         });
         plugins.forEach(x -> {
-            if (sharedPreferences.getBoolean(x.getID() + "_enabled", true)) x.onCreate(this);
+            if (!sharedPreferences.getBoolean(x.getID() + "_enabled", true)) return;
+            // One plugin failing to start (e.g. media before notification access is
+            // granted) must not stop the island or the other plugins.
+            try {
+                x.onCreate(this);
+            } catch (Throwable t) {
+                Log.w("OverlayService", "Plugin " + x.getID() + " could not start", t);
+            }
         });
         binded_plugin = null;
         bindPlugin();
+        // Calls, timers, navigation etc. that were already running before this (re)build.
+        try {
+            Broadcasts.send(this, Broadcasts.internal(this, Broadcasts.RESYNC));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Uses the user's picture as the island background. False when it can't be loaded. */
+    private boolean applyBackgroundImage(String uriString) {
+        View mainView = mView != null ? mView.findViewById(R.id.main) : null;
+        if (mainView == null) return false;
+        try {
+            Uri imageUri = Uri.parse(uriString);
+            Drawable background = Drawable.createFromStream(
+                    getContentResolver().openInputStream(imageUri), uriString);
+            if (background == null) return false;
+            mainView.setBackgroundTintList(null);
+            mainView.setBackground(background);
+            applyBlurToMainView();
+            imageBackground = true;
+            return true;
+        } catch (Exception e) {
+            Log.e("IMAGE_CHANGED", "Failed to load image URI", e);
+            return false;
+        }
     }
 
     ArrayList<String> queued = new ArrayList<>();
@@ -772,6 +785,7 @@ public class OverlayService extends AccessibilityService {
             constraintSet.connect(view.getId(), ConstraintSet.BOTTOM, mView.getId(), ConstraintSet.BOTTOM, 0);
             constraintSet.applyTo(mainLayout);
             params.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+            resetToPill(params);
             View vGap = mView.findViewById(R.id.blank_space);
             if (vGap != null) {
                 ViewGroup.LayoutParams params1 = vGap.getLayoutParams();
@@ -792,6 +806,7 @@ public class OverlayService extends AccessibilityService {
         constraintSet.connect(view.getId(), ConstraintSet.BOTTOM, mView.getId(), ConstraintSet.BOTTOM, 0);
         constraintSet.applyTo(mainLayout);
         params.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+        resetToPill(params);
         View vGap = mView.findViewById(R.id.blank_space);
         if (vGap != null) {
             ViewGroup.LayoutParams params1 = vGap.getLayoutParams();
@@ -802,6 +817,17 @@ public class OverlayService extends AccessibilityService {
         if (binded_plugin != null) binded_plugin.onBindComplete();
         refreshBubble();
     }
+    /**
+     * A newly bound plugin starts as the small pill. Without this, switching while
+     * the old plugin was expanded (music, a card) left a full-height panel behind.
+     */
+    private void resetToPill(ViewGroup.LayoutParams params) {
+        if (!(params instanceof WindowManager.LayoutParams)) return;
+        WindowManager.LayoutParams wp = (WindowManager.LayoutParams) params;
+        wp.height = minHeight;
+        wp.x = x;
+    }
+
     private void applyBlurToMainView() {
         View mainView = mView.findViewById(R.id.main);
 
@@ -1167,10 +1193,18 @@ public class OverlayService extends AccessibilityService {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(broadcastReceiver);
+        Broadcasts.unregister(this, broadcastReceiver);
         removeBubble();
-        mWindowManager.removeView(mView);
-        plugins.forEach(BasePlugin::onDestroy);
+        try {
+            if (mView != null && mView.getParent() != null) mWindowManager.removeView(mView);
+        } catch (Throwable ignored) {
+        }
+        plugins.forEach(p -> {
+            try {
+                p.onDestroy();
+            } catch (Throwable ignored) {
+            }
+        });
         Runtime.getRuntime().exit(0);
     }
 

@@ -56,7 +56,7 @@ public class UpdaterService extends Service {
                     intent.setPackage(getPackageName());
                     intent.putExtra("version", name);
                     intent.putExtra("url", page);
-                    sendBroadcast(intent);
+                    com.theglitchh.NothingLand.utils.Broadcasts.send(this, intent);
                     showUpdateNotification(name, page);
                 }
             } catch (Exception e) {

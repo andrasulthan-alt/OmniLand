@@ -13,6 +13,7 @@ import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 
 import com.theglitchh.NothingLand.plugins.LiveActivity.LiveActivityPlugin;
+import com.theglitchh.NothingLand.utils.Broadcasts;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -58,7 +59,16 @@ public class NotiService extends NotificationListenerService {
         super.onCreate();
         IntentFilter filter = new IntentFilter(getPackageName() + ".ACTION_OPEN_CLOSE");
         filter.addAction(getPackageName() + ".ACTION_CLOSE");
-        registerReceiver(receiver, filter);
+        filter.addAction(getPackageName() + Broadcasts.RESYNC);
+        Broadcasts.register(this, receiver, filter);
+    }
+
+    @Override
+    public void onListenerConnected() {
+        super.onListenerConnected();
+        // Media sessions can only be read once notification access is active, so let
+        // the island (re)attach now instead of waiting for the next restart.
+        Broadcasts.send(this, Broadcasts.internal(this, Broadcasts.LISTENER_CONNECTED));
     }
 
     private final ArrayList<StatusBarNotification> notifications = new ArrayList<>();
@@ -66,7 +76,7 @@ public class NotiService extends NotificationListenerService {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(receiver);
+        Broadcasts.unregister(this, receiver);
     }
 
     @Override
@@ -85,19 +95,22 @@ public class NotiService extends NotificationListenerService {
         Intent intent = new Intent(getPackageName() + ".NOTIFICATION_POSTED");
         intent.putExtra("package_name", sbn.getPackageName());
         intent.putExtra("id", sbn.getId());
+        intent.putExtra("key", sbn.getKey());
         intent.putExtra("time", sbn.getPostTime());
         intent.putExtra("icon_large", sbn.getNotification().getLargeIcon());
         intent.putExtra("icon_small", sbn.getNotification().getSmallIcon());
         intent.putExtra("category", sbn.getNotification().category);
         try {
-            intent.putExtra("title", notification.extras.getString("android.title"));
-            intent.putExtra("body", notification.extras.getString("android.text"));
+            // Read as CharSequence: many apps (WhatsApp, Telegram, Gmail) post styled text,
+            // which getString() returns as null, so those notifications never showed.
+            intent.putExtra("title", text(notification.extras, Notification.EXTRA_TITLE));
+            intent.putExtra("body", text(notification.extras, Notification.EXTRA_TEXT));
         } catch (Exception e) {
             //ignore
         }
-        notifications.removeIf(x -> x.getId() == sbn.getId() && x.getPackageName().equals(sbn.getPackageName()));
+        notifications.removeIf(x -> x.getKey().equals(sbn.getKey()));
         notifications.add(sbn);
-        sendBroadcast(intent);
+        Broadcasts.send(this, intent);
     }
 
     @Override
@@ -105,9 +118,10 @@ public class NotiService extends NotificationListenerService {
         super.onNotificationRemoved(sbn);
         Intent intent = new Intent(getPackageName() + ".NOTIFICATION_REMOVED");
         intent.putExtra("id", sbn.getId());
+        intent.putExtra("key", sbn.getKey());
         intent.putExtra("package_name", sbn.getPackageName());
         notifications.removeIf(x -> x.getKey().equals(sbn.getKey()));
-        sendBroadcast(intent);
+        Broadcasts.send(this, intent);
     }
 
     // ---------------------------------------------------------------- live activities
@@ -198,7 +212,7 @@ public class NotiService extends NotificationListenerService {
         }
         intent.putStringArrayListExtra("action_titles", titles);
         intent.putParcelableArrayListExtra("action_intents", intents);
-        sendBroadcast(intent);
+        Broadcasts.send(this, intent);
     }
 
     private static boolean isIncomingCall(Notification n) {
@@ -218,37 +232,70 @@ public class NotiService extends NotificationListenerService {
         }
     }
 
+    /** Finds a notification by its unique key (ids alone clash between apps). */
+    private StatusBarNotification find(Intent intent) {
+        String key = intent.getStringExtra("key");
+        if (key != null) {
+            for (StatusBarNotification x : notifications) {
+                if (key.equals(x.getKey())) return x;
+            }
+            try {
+                StatusBarNotification[] active = getActiveNotifications(new String[]{key});
+                if (active != null && active.length > 0) return active[0];
+            } catch (Exception ignored) {
+            }
+            return null;
+        }
+        int id = intent.getIntExtra("id", 0);
+        String pkg = intent.getStringExtra("package_name");
+        for (StatusBarNotification x : notifications) {
+            if (x.getId() == id && (pkg == null || pkg.equals(x.getPackageName()))) return x;
+        }
+        return null;
+    }
+
+    /** Resends calls, timers, navigation, etc. after the island was rebuilt. */
+    private void resendLiveActivities() {
+        StatusBarNotification[] active;
+        try {
+            active = getActiveNotifications();
+        } catch (Exception e) {
+            return; // not connected yet
+        }
+        if (active == null) return;
+        for (StatusBarNotification sbn : active) {
+            try {
+                String type = liveActivityType(sbn);
+                if (type != null) sendLiveActivity(sbn, type);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (intent.getAction().equals(context.getPackageName() + ".ACTION_OPEN_CLOSE")) {
-                Optional<StatusBarNotification> n = notifications.stream().filter(x -> x.getId() == intent.getExtras().getInt("id")).findFirst();
-                n.ifPresent(x -> {
-                    try {
-                        if (x.getNotification().deleteIntent != null) {
-                            x.getNotification().deleteIntent.send();
-                        } else {
-                            cancelNotification(x.getKey());
-                        }
-                        if (x.getNotification().contentIntent != null) {
-                            x.getNotification().contentIntent.send();
-                        }
-                    } catch (Exception ignored) {
-                    }
-                });
+            String action = intent.getAction();
+            if (action == null) return;
+            if (action.equals(context.getPackageName() + Broadcasts.RESYNC)) {
+                resendLiveActivities();
+                return;
             }
-            if (intent.getAction().equals(context.getPackageName() + ".ACTION_CLOSE")) {
-                Optional<StatusBarNotification> n = notifications.stream().filter(x -> x.getId() == intent.getExtras().getInt("id")).findFirst();
-                n.ifPresent(x -> {
-                    try {
-                        if (x.getNotification().deleteIntent != null) {
-                            x.getNotification().deleteIntent.send();
-                        } else {
-                            cancelNotification(x.getKey());
-                        }
-                    } catch (Exception ignored) {
-                    }
-                });
+            boolean open = action.equals(context.getPackageName() + ".ACTION_OPEN_CLOSE");
+            boolean close = action.equals(context.getPackageName() + ".ACTION_CLOSE");
+            if (!open && !close) return;
+            StatusBarNotification x = find(intent);
+            if (x == null) return;
+            try {
+                if (open && x.getNotification().contentIntent != null) {
+                    x.getNotification().contentIntent.send();
+                }
+            } catch (Exception ignored) {
+            }
+            try {
+                // Really dismiss it; the system sends the app's own deleteIntent for us.
+                cancelNotification(x.getKey());
+            } catch (Exception ignored) {
             }
         }
     };
