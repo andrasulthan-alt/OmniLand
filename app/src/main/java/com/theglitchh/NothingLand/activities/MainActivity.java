@@ -185,8 +185,9 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
 
             @Override
             public void onCheckChanged(boolean checked, Context ctx) {
+                if (sharedPreferences.getBoolean("wallpaper_color", false) == checked) return;
                 sharedPreferences.edit().putBoolean("wallpaper_color", checked).apply();
-                // Redraw the settings in the new colours right away.
+                // Redraw the settings in the new colours right away (only on a real change).
                 MainActivity.this.recreate();
             }
         });
