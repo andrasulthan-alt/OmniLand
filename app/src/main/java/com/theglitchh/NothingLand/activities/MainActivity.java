@@ -177,7 +177,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
                 startActivity(new Intent(MainActivity.this, GestureSettingsActivity.class));
             }
         });
-        settings.add(new SettingStruct("Color the island from wallpaper (Material You)", "App Settings", SettingStruct.TYPE_TOGGLE) {
+        settings.add(new SettingStruct("Material You colours (island and app)", "App Settings", SettingStruct.TYPE_TOGGLE) {
             @Override
             public boolean onAttach(Context ctx) {
                 return sharedPreferences.getBoolean("wallpaper_color", false);
@@ -186,6 +186,8 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
             @Override
             public void onCheckChanged(boolean checked, Context ctx) {
                 sharedPreferences.edit().putBoolean("wallpaper_color", checked).apply();
+                // Redraw the settings in the new colours right away.
+                MainActivity.this.recreate();
             }
         });
         settings.add(appToggle("Smooth animations", "smooth_animation"));
