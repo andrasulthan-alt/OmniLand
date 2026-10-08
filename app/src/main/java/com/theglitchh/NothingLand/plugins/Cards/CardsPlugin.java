@@ -25,6 +25,7 @@ import com.theglitchh.NothingLand.services.OverlayService;
 import com.theglitchh.NothingLand.utils.CallBack;
 import com.theglitchh.NothingLand.utils.QuickActions;
 import com.theglitchh.NothingLand.utils.SettingStruct;
+import com.theglitchh.NothingLand.views.DotSliderDrawable;
 
 import java.util.ArrayList;
 
@@ -159,12 +160,25 @@ public class CardsPlugin extends BasePlugin {
         else buildSlidersCard();
     }
 
+    /** Small uppercase caption above a slider, Nothing style. */
     private TextView label(String text) {
+        TextView tv = new TextView(ctx);
+        tv.setText(text.toUpperCase(java.util.Locale.ROOT));
+        tv.setTextColor(ctx.textColor);
+        tv.setAlpha(0.7f);
+        tv.setTextSize(11);
+        tv.setLetterSpacing(0.1f);
+        tv.setPadding(0, ctx.dpToInt(8), 0, 0);
+        return tv;
+    }
+
+    /** Small grey note under a caption (e.g. why the flashlight has no levels). */
+    private TextView note(String text) {
         TextView tv = new TextView(ctx);
         tv.setText(text);
         tv.setTextColor(ctx.textColor);
-        tv.setTextSize(13);
-        tv.setPadding(0, ctx.dpToInt(6), 0, 0);
+        tv.setAlpha(0.45f);
+        tv.setTextSize(10);
         return tv;
     }
 
@@ -172,8 +186,12 @@ public class CardsPlugin extends BasePlugin {
         SeekBar sb = new SeekBar(ctx);
         sb.setMax(max);
         sb.setProgress(value);
-        sb.setProgressTintList(ColorStateList.valueOf(ctx.textColor));
-        sb.setThumbTintList(ColorStateList.valueOf(ctx.textColor));
+        // Dotted Nothing-style track with one red dot at the current value; no thumb.
+        sb.setProgressDrawable(new DotSliderDrawable(ctx.textColor, DotSliderDrawable.NOTHING_RED,
+                ctx.getResources().getDisplayMetrics().density));
+        sb.setThumb(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        sb.setSplitTrack(false);
+        sb.setMinimumHeight(ctx.dpToInt(32));
         sb.setOnSeekBarChangeListener(listener);
         panel.addView(sb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return sb;
@@ -191,7 +209,7 @@ public class CardsPlugin extends BasePlugin {
 
     private void buildSlidersCard() {
         // Brightness
-        panel.addView(label("☀ Brightness"));
+        panel.addView(label("Brightness"));
         int brightness = 128;
         try {
             brightness = Settings.System.getInt(ctx.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
@@ -226,7 +244,7 @@ public class CardsPlugin extends BasePlugin {
 
         // Media volume
         final AudioManager audio = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-        panel.addView(label("🔊 Media volume"));
+        panel.addView(label("Media volume"));
         slider(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC), audio.getStreamVolume(AudioManager.STREAM_MUSIC), new OnChange() {
             @Override
             public void onProgressChanged(SeekBar sb, int value, boolean fromUser) {
@@ -243,15 +261,16 @@ public class CardsPlugin extends BasePlugin {
         // Flashlight: brightness levels when the phone supports them (Android 13+ and
         // a camera driver that reports them), otherwise a simple on/off slider.
         final int torchMax = QuickActions.torchMaxLevel(ctx);
-        String torchLabel;
+        String torchNote;
         if (torchMax > 1) {
-            torchLabel = "🔦 Flashlight brightness (" + torchMax + " levels)";
+            torchNote = torchMax + " levels";
         } else if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
-            torchLabel = "🔦 Flashlight on/off (brightness levels need Android 13+)";
+            torchNote = "On/off only. Brightness levels need Android 13+";
         } else {
-            torchLabel = "🔦 Flashlight on/off (this phone doesn't offer brightness levels to apps)";
+            torchNote = "On/off only. This phone doesn't offer brightness levels to apps";
         }
-        panel.addView(label(torchLabel));
+        panel.addView(label("Flashlight"));
+        panel.addView(note(torchNote));
         slider(torchMax, QuickActions.torchLevel(ctx), new OnChange() {
             @Override
             public void onProgressChanged(SeekBar sb, int value, boolean fromUser) {
@@ -321,7 +340,7 @@ public class CardsPlugin extends BasePlugin {
             int rows = Math.max(1, (Math.min(n, 8) + 3) / 4);
             return ctx.statusBarHeight + ctx.dpToInt(30 + rows * 68);
         }
-        return ctx.statusBarHeight + ctx.dpToInt(200);
+        return ctx.statusBarHeight + ctx.dpToInt(215);
     }
 
     private final CallBack startCallBack = new CallBack() {
