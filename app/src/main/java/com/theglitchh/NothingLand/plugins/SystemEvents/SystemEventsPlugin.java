@@ -68,45 +68,45 @@ public class SystemEventsPlugin extends BasePlugin {
             try {
                 switch (action) {
                     case BluetoothDevice.ACTION_ACL_CONNECTED:
-                        if (on(PREF_BT)) show("🎧 " + deviceName(intent) + " connected");
+                        if (on(PREF_BT)) show("" + deviceName(intent) + " connected");
                         break;
                     case BluetoothDevice.ACTION_ACL_DISCONNECTED:
-                        if (on(PREF_BT)) show("🎧 " + deviceName(intent) + " disconnected");
+                        if (on(PREF_BT)) show("" + deviceName(intent) + " disconnected");
                         break;
                     case AudioManager.RINGER_MODE_CHANGED_ACTION: {
                         int mode = intent.getIntExtra(AudioManager.EXTRA_RINGER_MODE, -1);
                         if (mode == lastRinger) break;
                         lastRinger = mode;
                         if (startup || !on(PREF_RINGER)) break;
-                        if (mode == AudioManager.RINGER_MODE_SILENT) show("🔇 Silent");
-                        else if (mode == AudioManager.RINGER_MODE_VIBRATE) show("📳 Vibrate");
-                        else if (mode == AudioManager.RINGER_MODE_NORMAL) show("🔔 Sound on");
+                        if (mode == AudioManager.RINGER_MODE_SILENT) show("Silent");
+                        else if (mode == AudioManager.RINGER_MODE_VIBRATE) show("Vibrate");
+                        else if (mode == AudioManager.RINGER_MODE_NORMAL) show("Sound on");
                         break;
                     }
                     case Intent.ACTION_AIRPLANE_MODE_CHANGED:
                         if (startup || !on(PREF_AIRPLANE)) break;
-                        show(intent.getBooleanExtra("state", false) ? "✈️ Airplane mode on" : "✈️ Airplane mode off");
+                        show(intent.getBooleanExtra("state", false) ? "Airplane mode on" : "Airplane mode off");
                         break;
                     case ACTION_WIFI_AP: {
                         int state = intent.getIntExtra("wifi_state", -1);
                         if (state == lastApState) break;
                         lastApState = state;
                         if (startup || !on(PREF_HOTSPOT)) break;
-                        if (state == 13) show("📶 Hotspot on");
-                        else if (state == 11) show("📶 Hotspot off");
+                        if (state == 13) show("Hotspot on");
+                        else if (state == 11) show("Hotspot off");
                         break;
                     }
                     case Intent.ACTION_HEADSET_PLUG:
                         if (startup || !on(PREF_HEADSET)) break;
-                        show(intent.getIntExtra("state", 0) == 1 ? "🎧 Headphones connected" : "🎧 Headphones removed");
+                        show(intent.getIntExtra("state", 0) == 1 ? "Headphones connected" : "Headphones removed");
                         break;
                     case Intent.ACTION_BATTERY_LOW:
-                        if (on(PREF_BATTERY)) show("🪫 Low battery");
+                        if (on(PREF_BATTERY)) show("Low battery");
                         break;
                     case PowerManager.ACTION_POWER_SAVE_MODE_CHANGED: {
                         if (startup || !on(PREF_BATTERY)) break;
                         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
-                        show(pm != null && pm.isPowerSaveMode() ? "🔋 Battery saver on" : "🔋 Battery saver off");
+                        show(pm != null && pm.isPowerSaveMode() ? "Battery saver on" : "Battery saver off");
                         break;
                     }
                     default:
