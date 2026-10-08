@@ -11,8 +11,8 @@ android {
         applicationId "io.github.andrasulthan_alt.omniland"
         minSdk 26
         targetSdk 33
-        versionCode 10
-        versionName "0.8.0"
+        versionCode 11
+        versionName "0.8.1"
         // Repo the in-app update checker looks at for new releases.
         buildConfigField "String", "UPDATE_REPO", "\"andrasulthan-alt/OmniLand\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
