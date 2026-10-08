@@ -18,8 +18,12 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <!-- Bluetooth connected/disconnected mini events (Android 12+ asks the user once). -->
+    <!-- Bluetooth connected/disconnected mini events (Android 12+ asks the user once).
+         Android 8-11 only send those events to apps holding BLUETOOTH. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
     <!-- Brightness slider in the quick card. Granted by the user in system settings. -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
