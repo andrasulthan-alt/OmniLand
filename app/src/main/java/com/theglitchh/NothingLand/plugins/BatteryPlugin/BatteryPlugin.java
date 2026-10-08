@@ -55,7 +55,7 @@ public class BatteryPlugin extends BasePlugin {
     public void onCreate(OverlayService context) {
         ctx = context;
         ctx.registerReceiver(mBroadcastReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        ctx.registerReceiver(receiver, new IntentFilter(ctx.getPackageName() + ".COLOR_CHANGED"));
+        com.theglitchh.NothingLand.utils.Broadcasts.register(ctx, receiver, new IntentFilter(ctx.getPackageName() + ".COLOR_CHANGED"));
     }
 
     /** "Full in 1h 20m" from the system's own estimate (Android 9+), or "" if unknown. */
@@ -90,16 +90,28 @@ public class BatteryPlugin extends BasePlugin {
     }
 
     float batteryPercent;
+    /** Survives island rebuilds, so a rebuild while charging doesn't show the pill again. */
+    private static Boolean lastPlugged = null;
     private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            int status = intent.getExtras().getInt(BatteryManager.EXTRA_STATUS);
+            int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
             boolean isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING;
-            if (isCharging) {
+            boolean plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0;
+            int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            if (level >= 0 && scale > 0) batteryPercent = level * 100 / (float) scale;
+            // This broadcast repeats on every level/temperature change. Only show the
+            // charging pill when the charger is plugged in, not again and again.
+            Boolean before = lastPlugged;
+            lastPlugged = plugged;
+            boolean justPlugged = plugged && before != null && !before;
+            if (!justPlugged && (plugged || isCharging)) {
+                updateView();
+                return;
+            }
+            if (justPlugged) {
                 ctx.enqueue(BatteryPlugin.this);
-                int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-                int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-                batteryPercent = level * 100 / (float) scale;
                 updateView();
 
                 new Handler().postDelayed(new Runnable() {
