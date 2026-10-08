@@ -53,10 +53,16 @@ public class RecylerViewSettingsAdapter extends RecyclerView.Adapter<RecylerView
             holder.itemView.setOnClickListener(l -> settings.get(position).onClick(context));
         }
         if (holder.ViewType == SettingStruct.TYPE_TOGGLE) {
-            holder.switchBtn.setOnCheckedChangeListener((compoundButton, b) -> {
-                settings.get(position).onCheckChanged(b, context);
-            });
+            // Show the saved state first, then listen. Setting the state with the
+            // listener attached counted as a user change (e.g. it restarted the
+            // screen over and over when Material You was on).
+            holder.switchBtn.setOnCheckedChangeListener(null);
             holder.switchBtn.setChecked(settings.get(position).onAttach(context));
+            holder.switchBtn.setOnCheckedChangeListener((compoundButton, b) -> {
+                int pos = holder.getAdapterPosition();
+                if (pos < 0 || settings.get(pos) == null) return;
+                settings.get(pos).onCheckChanged(b, context);
+            });
         }
     }
 
