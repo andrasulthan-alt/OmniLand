@@ -36,6 +36,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.viewpager.widget.ViewPager;
 
 import com.theglitchh.NothingLand.activities.NotificationManageActivity;
+import com.theglitchh.NothingLand.utils.Broadcasts;
 import com.theglitchh.NothingLand.utils.CallBack;
 import com.theglitchh.NothingLand.R;
 import com.theglitchh.NothingLand.plugins.BasePlugin;
@@ -68,14 +69,15 @@ public class NotificationPlugin extends BasePlugin {
             if (intent.getAction().equals(context.getPackageName() + ".NOTIFICATION_POSTED")) {
                 Bundle extras = intent.getExtras();
                 if (!enabled_apps.contains(extras.getString("package_name"))) return;
-                if (Notification.CATEGORY_SYSTEM.equals(extras.getString("category")) && Notification.CATEGORY_SERVICE
+                // System and "app is running" notifications don't belong in the island.
+                if (Notification.CATEGORY_SYSTEM.equals(extras.getString("category")) || Notification.CATEGORY_SERVICE
                         .equals(extras.getString("category"))) return;
                 handleNotificationUpdate(extras.getString("title"), extras.getString("body"), extras.getString("package_name"),
                         extras.getInt("id"), extras);
             }
             if (intent.getAction().equals(context.getPackageName() + ".NOTIFICATION_REMOVED")) {
-                int id = intent.getExtras().getInt("id");
-                handleNotificationUpdate(id);
+                Bundle extras = intent.getExtras();
+                handleNotificationUpdate(extras.getString("key"), extras.getInt("id"));
             }
             if (intent.getAction().equals(context.getPackageName() + ".NOTIFICATION_APPS_UPDATE")) {
                 NotificationPlugin.this.context.sharedPreferences.putString("notifications_apps", intent.getExtras().getString("apps"));
@@ -93,7 +95,7 @@ public class NotificationPlugin extends BasePlugin {
         filter.addAction(context.getPackageName() + ".NOTIFICATION_POSTED");
         filter.addAction(context.getPackageName() + ".NOTIFICATION_REMOVED");
         filter.addAction(context.getPackageName() + ".NOTIFICATION_APPS_UPDATE");
-        context.registerReceiver(broadcastReceiver, filter);
+        Broadcasts.register(context, broadcastReceiver, filter);
         enabled_apps = NotificationManageAppsAdapter.parseEnabledApps(context.sharedPreferences.getString("notifications_apps", ""));
     }
 
@@ -121,8 +123,19 @@ public class NotificationPlugin extends BasePlugin {
         return settingStructs;
     }
 
-    private void handleNotificationUpdate(int id) {
-        Optional<NotificationMeta> to_remove = notificationArrayList.stream().filter(x -> x.getId() == id).findFirst();
+    /** Notifications are matched by their unique key; ids alone clash between apps. */
+    private static boolean same(NotificationMeta m, String key, int id) {
+        String k = m.getAll() != null ? m.getAll().getString("key") : null;
+        if (key != null && k != null) return key.equals(k);
+        return m.getId() == id;
+    }
+
+    private static String keyOf(NotificationMeta m) {
+        return m.getAll() != null ? m.getAll().getString("key") : null;
+    }
+
+    private void handleNotificationUpdate(String key, int id) {
+        Optional<NotificationMeta> to_remove = notificationArrayList.stream().filter(x -> same(x, key, id)).findFirst();
         to_remove.ifPresent(notificationMeta -> notificationArrayList.remove(notificationMeta));
         if (notificationArrayList.size() > 0) meta = notificationArrayList.get(0);
         else meta = null;
@@ -133,7 +146,9 @@ public class NotificationPlugin extends BasePlugin {
     private ArrayList<String> enabled_apps = new ArrayList<>();
 
     private void handleNotificationUpdate(String title, String description, String packagename, int id, Bundle all) {
-        if (title == null || description == null) return;
+        if (title == null) title = "";
+        if (description == null) description = "";
+        if (title.isEmpty() && description.isEmpty()) return;
         Drawable icon_d = null;
 
         try {
@@ -147,7 +162,8 @@ public class NotificationPlugin extends BasePlugin {
             return;
         }
         meta = new NotificationMeta(title, description, id, icon_d, all);
-        Optional<NotificationMeta> meta1 = notificationArrayList.stream().filter(x -> x.getId() == id).findFirst();
+        final String key = all.getString("key");
+        Optional<NotificationMeta> meta1 = notificationArrayList.stream().filter(x -> same(x, key, id)).findFirst();
         meta1.ifPresent(notificationMeta -> notificationArrayList.remove(notificationMeta));
         notificationArrayList.add(0, meta);
         if (adapter != null) adapter.notifyDataSetChanged();
@@ -170,6 +186,7 @@ public class NotificationPlugin extends BasePlugin {
 
     @Override
     public void onTextColorChange() {
+        if (mView == null) return;
         ((ImageView) mView.findViewById(R.id.cover2)).setImageTintList(ColorStateList.valueOf(context.textColor));
     }
 
@@ -296,17 +313,22 @@ public class NotificationPlugin extends BasePlugin {
 
     @Override
     public void onUnbind() {
-        closeOverlay();
+        // Another plugin (music, a call, a card) takes the island. Don't animate or
+        // dequeue here: the notifications are still waiting and come back afterwards.
+        expanded = false;
+        overlayOpen = false;
         if (mView != null)
             ((ViewPager) mView.findViewById(R.id.text_info)).removeOnPageChangeListener(listener);
         mView = null;
-        overlayOpen = false;
     }
 
     @Override
     public void onDestroy() {
-        if (context != null) context.unregisterReceiver(broadcastReceiver);
+        Broadcasts.unregister(context, broadcastReceiver);
+        if (mHandler != null) mHandler.removeCallbacksAndMessages(null);
         meta = null;
+        expanded = false;
+        overlayOpen = false;
     }
 
     private Handler mHandler;
@@ -314,6 +336,7 @@ public class NotificationPlugin extends BasePlugin {
         @Override
         public void onFinish() {
             super.onFinish();
+            if (mView == null) return;
             if (expanded) {
                 View v = mView.findViewById(R.id.text_info);
                 v.setVisibility(View.VISIBLE);
@@ -350,18 +373,13 @@ public class NotificationPlugin extends BasePlugin {
                 mHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
-                        Intent i = new Intent(context.getPackageName() + ".ACTION_CLOSE");
-                        i.putExtra("id", meta.getId());
-                        context.sendBroadcast(i);
-                        handleNotificationUpdate(meta.getId());
+                        if (meta == null) return;
+                        sendAction(".ACTION_CLOSE", meta);
                     }
                 }, 300); // Delay for animation duration
             } else {
                 // If the notification is collapsed, just close it immediately
-                Intent i = new Intent(context.getPackageName() + ".ACTION_CLOSE");
-                i.putExtra("id", meta.getId());
-                context.sendBroadcast(i);
-                handleNotificationUpdate(meta.getId());
+                sendAction(".ACTION_CLOSE", meta);
             }
         }
     }
@@ -395,6 +413,7 @@ public class NotificationPlugin extends BasePlugin {
         @Override
         public void onFinish() {
             super.onFinish();
+            if (mView == null) return;
             if (expanded) {
                 mView.findViewById(R.id.tab_layout).setVisibility(View.VISIBLE);
                 if (shouldRedraw) {
@@ -457,12 +476,17 @@ public class NotificationPlugin extends BasePlugin {
 
     @Override
     public void onClick() {
-        if (meta != null) {
-            Intent intent = new Intent(context.getPackageName() + ".ACTION_OPEN_CLOSE");
-            intent.putExtra("id", meta.getId());
-            context.sendBroadcast(intent);
-            handleNotificationUpdate(meta.getId());
-        }
+        if (meta != null) sendAction(".ACTION_OPEN_CLOSE", meta);
+    }
+
+    /** Asks NotiService to open and/or dismiss a notification, then drops it from the island. */
+    private void sendAction(String actionSuffix, NotificationMeta m) {
+        Intent intent = Broadcasts.internal(context, actionSuffix);
+        intent.putExtra("id", m.getId());
+        intent.putExtra("key", keyOf(m));
+        intent.putExtra("package_name", m.getAll() != null ? m.getAll().getString("package_name") : null);
+        Broadcasts.send(context, intent);
+        handleNotificationUpdate(keyOf(m), m.getId());
     }
 
     @Override
@@ -473,6 +497,7 @@ public class NotificationPlugin extends BasePlugin {
     private final CallBack onChange = new CallBack() {
         @Override
         public void onChange(float p) {
+            if (mView == null) return;
             RelativeLayout relativeLayout = mView.findViewById(R.id.relativeLayout);
             ConstraintLayout.LayoutParams layoutParams = (ConstraintLayout.LayoutParams) relativeLayout.getLayoutParams();
             ConstraintSet constraintSet = new ConstraintSet();
@@ -495,6 +520,7 @@ public class NotificationPlugin extends BasePlugin {
     };
 
     private void animateChild(boolean expanding, int h) {
+        if (mView == null) return;
         View view1 = mView.findViewById(R.id.cover);
         View view2 = mView.findViewById(R.id.cover2);
         ValueAnimator height_anim = ValueAnimator.ofInt(view1.getHeight(), h);
@@ -530,6 +556,10 @@ public class NotificationPlugin extends BasePlugin {
     }
 
     private void animateChild(boolean expanding, int h, CallBack callback) {
+        if (mView == null) {
+            callback.onFinish();
+            return;
+        }
         View view1 = mView.findViewById(R.id.cover);
         View view2 = mView.findViewById(R.id.cover2);
         ValueAnimator height_anim = ValueAnimator.ofInt(view1.getHeight(), h);
