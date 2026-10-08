@@ -59,8 +59,9 @@ public class LiveActivityPlugin extends BasePlugin {
     private static final Pattern DISTANCE = Pattern.compile("(\\d+(?:[.,]\\d+)?)\\s*(km|m|mi|ft|meters?|miles?)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern DEVICES = Pattern.compile("(\\d+)\\s*(?:device|connected|client)", Pattern.CASE_INSENSITIVE);
 
-    private static final int GREEN = Color.parseColor("#2E9E4F");
-    private static final int RED = Color.parseColor("#D93A3A");
+    // Nothing style: white for "answer", the one red for "decline / hang up".
+    private static final int WHITE = Color.WHITE;
+    private static final int RED = Color.parseColor("#D71921");
     private static final long ANIMATION_MS = 850;
 
     private static class Item {
@@ -129,7 +130,7 @@ public class LiveActivityPlugin extends BasePlugin {
         filter.addAction(context.getPackageName() + ".LIVE_POSTED");
         filter.addAction(context.getPackageName() + ".NOTIFICATION_REMOVED");
         filter.addAction(context.getPackageName() + ".NOTIFICATION_POSTED");
-        context.registerReceiver(receiver, filter);
+        com.theglitchh.NothingLand.utils.Broadcasts.register(context, receiver, filter);
     }
 
     @Override
@@ -300,7 +301,7 @@ public class LiveActivityPlugin extends BasePlugin {
         TextView text = mView.findViewById(R.id.live_text);
         ProgressBar bar = mView.findViewById(R.id.live_progress);
 
-        // Small island icon: the notification's own small icon, tinted (green for calls).
+        // Small island icon: the notification's own small icon, tinted like the island text.
         Drawable small = null;
         try {
             if (it.smallIcon != null) small = it.smallIcon.loadDrawable(ctx);
@@ -320,7 +321,7 @@ public class LiveActivityPlugin extends BasePlugin {
         } else {
             if (small != null) {
                 icon.setImageDrawable(small);
-                icon.setImageTintList(ColorStateList.valueOf(TYPE_CALL.equals(it.type) ? GREEN : color));
+                icon.setImageTintList(ColorStateList.valueOf(color));
             } else {
                 icon.setImageDrawable(app);
                 icon.setImageTintList(null);
@@ -391,7 +392,7 @@ public class LiveActivityPlugin extends BasePlugin {
         }
         if (TYPE_HOTSPOT.equals(it.type)) {
             Matcher m = DEVICES.matcher((it.title == null ? "" : it.title) + " " + (it.text == null ? "" : it.text));
-            if (m.find()) return m.group(1) + " 📱";
+            if (m.find()) return m.group(1) + ("1".equals(m.group(1)) ? " device" : " devices");
             return "On";
         }
         // Timer from an app that doesn't expose a live clock: show its own text.
@@ -416,8 +417,11 @@ public class LiveActivityPlugin extends BasePlugin {
             return;
         }
         b.setVisibility(View.VISIBLE);
-        b.setText(label);
-        b.setBackgroundTintList(ColorStateList.valueOf(isPositive(label) ? GREEN : RED));
+        b.setText(label.toUpperCase(Locale.ROOT));
+        boolean positive = isPositive(label);
+        b.setBackgroundTintList(ColorStateList.valueOf(positive ? WHITE : RED));
+        b.setTextColor(positive ? Color.BLACK : Color.WHITE);
+        b.setLetterSpacing(0.08f);
     }
 
     private static boolean isPositive(String label) {
@@ -542,7 +546,7 @@ public class LiveActivityPlugin extends BasePlugin {
                 Drawable d = current.smallIcon.loadDrawable(ctx);
                 if (d != null) {
                     d = d.mutate();
-                    d.setTint(TYPE_CALL.equals(current.type) ? GREEN : ctx.textColor);
+                    d.setTint(ctx.textColor);
                     return d;
                 }
             }
