@@ -384,7 +384,7 @@ public class OverlayService extends AccessibilityService {
 
     public int getAttr(int attr) {
         final TypedValue value = new TypedValue();
-        ctx.getTheme().resolveAttribute(com.google.android.material.R.attr.colorPrimary, value, true);
+        ctx.getTheme().resolveAttribute(attr, value, true);
         return value.data;
     }
 
@@ -433,7 +433,10 @@ public class OverlayService extends AccessibilityService {
         mView.setMinimumWidth(minWidth);
 
 
-        ctx = DynamicColors.wrapContextIfAvailable(getBaseContext(), com.google.android.material.R.style.ThemeOverlay_Material3_DynamicColors_DayNight);
+        // Accent colours in the island: Nothing red, or Material You when switched on.
+        ctx = sharedPreferences.getBoolean("wallpaper_color", false)
+                ? DynamicColors.wrapContextIfAvailable(getBaseContext(), com.google.android.material.R.style.ThemeOverlay_Material3_DynamicColors_DayNight)
+                : getBaseContext();
         mParams.gravity = Gravity.TOP | Gravity.CENTER;
         if (y == 0) {
             y = (int) (sharedPreferences.getFloat("overlay_y", defaultYPercent) * 0.01f * metrics.heightPixels);
